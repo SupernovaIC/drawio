@@ -104,6 +104,12 @@ Editor.moveImage = (mxClient.IS_SVG) ? 'data:image/svg+xml;base64,PHN2ZyB4bWxucz
 	IMAGE_PATH + '/move.png';
 
 /**
+ * 
+ */
+Editor.rowMoveImage = (mxClient.IS_SVG) ? 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAcAAAAEBAMAAACw6DhOAAAAGFBMVEUzMzP///9tbW1QUFCKiopBQUF8fHxfX1/IXlmXAAAAFElEQVQImWNgNVdzYBAUFBRggLMAEzYBy29kEPgAAAAASUVORK5CYII=' :
+	IMAGE_PATH + '/thumb_horz.png';
+
+/**
  * Images below are for lightbox and embedding toolbars.
  */
 Editor.helpImage = (mxClient.IS_SVG) ? 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0Ij48cGF0aCBmaWxsPSJub25lIiBkPSJNMCAwaDI0djI0SDB6Ii8+PHBhdGggZD0iTTExIDE4aDJ2LTJoLTJ2MnptMS0xNkM2LjQ4IDIgMiA2LjQ4IDIgMTJzNC40OCAxMCAxMCAxMCAxMC00LjQ4IDEwLTEwUzE3LjUyIDIgMTIgMnptMCAxOGMtNC40MSAwLTgtMy41OS04LThzMy41OS04IDgtOCA4IDMuNTkgOCA4LTMuNTkgOC04IDh6bTAtMTRjLTIuMjEgMC00IDEuNzktNCA0aDJjMC0xLjEuOS0yIDItMnMyIC45IDIgMmMwIDItMyAxLjc1LTMgNWgyYzAtMi4yNSAzLTIuNSAzLTUgMC0yLjIxLTEuNzktNC00LTR6Ii8+PC9zdmc+' :
@@ -2677,108 +2683,67 @@ FilenameDialog.createFileTypes = function(editorUi, nameInput, types)
 		
 		return result;
 	};
-
-	// Selects ancestors before descendants
-	var graphHandlerGetInitialCellForEvent = mxGraphHandler.prototype.getInitialCellForEvent;
-	mxGraphHandler.prototype.getInitialCellForEvent = function(me)
-	{
-		var cell = graphHandlerGetInitialCellForEvent.apply(this, arguments);
-		var model = this.graph.getModel();
-		var psel = model.getParent(this.graph.getSelectionCell());
-		var parent = model.getParent(cell);
-		
-		if (psel == null || (psel != cell && psel != parent))
-		{
-			while (!this.graph.isCellSelected(cell) &&
-				!this.graph.isCellSelected(parent) &&
-				(!this.graph.isContainer(parent) ||
-				this.graph.isPart(cell)) &&
-				model.isVertex(parent))
-			{
-				cell = parent;
-				parent = this.graph.getModel().getParent(cell);
-			}
-		}
-		
-		return cell;
-	};
 	
-	// Selection is delayed to mouseup if ancestor is selected
-	var graphHandlerIsDelayedSelection = mxGraphHandler.prototype.isDelayedSelection;
-	mxGraphHandler.prototype.isDelayedSelection = function(cell, me)
+	/**
+	 * Selects tables before cells and rows.
+	 */
+	var mxGraphHandlerIsPropagateSelectionCell = mxGraphHandler.prototype.isPropagateSelectionCell;
+	mxGraphHandler.prototype.isPropagateSelectionCell = function(cell, immediate)
 	{
-		var result = graphHandlerIsDelayedSelection.apply(this, arguments);
+		var result = false;
+		var parent = this.graph.model.getParent(cell)
 		
-		if (!result)
+		if (immediate)
 		{
-			var model = this.graph.getModel();
-			var parent = model.getParent(cell);
+			var geo = this.graph.getCellGeometry(cell);
 			
-			while (parent != null)
+			return !this.graph.model.isEdge(cell) &&
+				!this.graph.model.isEdge(parent) &&
+				!this.graph.isSiblingSelected(cell) &&
+				(geo == null || geo.relative ||
+				!this.graph.isContainer(parent) ||
+				this.graph.isPart(cell));
+		}
+		else
+		{
+			result = mxGraphHandlerIsPropagateSelectionCell.apply(this, arguments);
+			
+			if (this.graph.isTableCell(cell) || this.graph.isTableRow(cell))
 			{
-				// Inconsistency for unselected parent swimlane is intended for easier moving
-				// of stack layouts where the container title section is too far away
-				if (this.graph.isCellSelected(parent) && model.isVertex(parent))
+				var table = parent;
+				
+				if (!this.graph.isTable(table))
 				{
-					result = true;
-					break;
+					table = this.graph.model.getParent(table);
 				}
 				
-				parent = model.getParent(parent);
+				result = !this.graph.selectionCellsHandler.isHandled(table) ||
+					this.graph.isCellSelected(cell) || (this.graph.isTableCell(cell) &&
+					this.graph.isCellSelected(parent));
 			}
 		}
 		
 		return result;
 	};
-	
-	// Delayed selection of parent group
-	mxGraphHandler.prototype.selectDelayed = function(me)
-	{
-		if (!this.graph.popupMenuHandler.isPopupTrigger(me))
-		{
-			var cell = me.getCell();
-			
-			if (cell == null)
-			{
-				cell = this.cell;
-			}
 
-			// Selects folded cell for hit on folding icon
-			var state = this.graph.view.getState(cell)
-			
-			if (state != null && me.isSource(state.control))
-			{
-				this.graph.selectCellForEvent(cell, me.getEvent());
-			}
-			else
-			{
-				if (!this.graph.isToggleEvent(me.getEvent()))
-				{
-					var model = this.graph.getModel();
-					var parent = model.getParent(cell);
-					
-					while (!this.graph.isCellSelected(parent) && model.isVertex(parent))
-					{
-						cell = parent;
-						parent = model.getParent(cell);
-					}
-				}
-				
-				this.graph.selectCellForEvent(cell, me.getEvent());
-			}
-		}
-	};
-
-	// Returns last selected ancestor
+	/**
+	 * Returns last selected ancestor
+	 */
 	mxPopupMenuHandler.prototype.getCellForPopupEvent = function(me)
 	{
 		var cell = me.getCell();
 		var model = this.graph.getModel();
 		var parent = model.getParent(cell);
+		var state = this.graph.view.getState(parent);
+		var selected = this.graph.isCellSelected(cell);
 		
-		while (model.isVertex(parent) && !this.graph.isContainer(parent))
+		while (state != null && (model.isVertex(parent) || model.isEdge(parent)))
 		{
-			if (this.graph.isCellSelected(parent))
+			var temp = this.graph.isCellSelected(parent);
+			selected = selected || temp;
+			
+			if (temp || (!selected && (this.graph.isTableCell(cell) ||
+				this.graph.isTableRow(cell))))
 			{
 				cell = parent;
 			}
